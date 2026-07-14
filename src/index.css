@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply font-sans text-gray-900;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary rounded-full;
+  }
+}
+
+@layer components {
+  .btn-black {
+    @apply inline-flex items-center justify-center bg-black text-white px-8 py-4 rounded-full font-semibold tracking-widest text-xs uppercase transition-all duration-300 hover:bg-gray-900 hover:scale-105 hover:shadow-xl;
+  }
+
+  .btn-white-outline {
+    @apply inline-flex items-center justify-center border-2 border-white text-white px-8 py-4 rounded-full font-semibold tracking-widest text-xs uppercase transition-all duration-300 hover:bg-white hover:text-primary hover:scale-105;
+  }
+
+  .btn-primary-outline {
+    @apply inline-flex items-center justify-center border-2 border-primary text-primary px-8 py-4 rounded-full font-semibold tracking-widest text-xs uppercase transition-all duration-300 hover:bg-primary hover:text-white hover:scale-105;
+  }
+
+  .section-pad {
+    @apply py-20 md:py-28;
+  }
+
+  .container-max {
+    @apply max-w-7xl mx-auto px-6 lg:px-8;
+  }
+}
