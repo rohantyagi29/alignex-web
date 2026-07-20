@@ -115,22 +115,20 @@ export default function WhyAlignex() {
               </motion.div>
             </div>
 
-            {/* Right: smiling girl placeholder */}
+            {/* Right: smiling girl image */}
             <motion.div
               variants={fadeUp}
               custom={2}
               initial="hidden"
               animate="show"
-              className="flex items-end justify-center bg-gray-50 relative overflow-hidden"
+              className="flex items-end justify-center bg-primary/5 relative overflow-hidden"
             >
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-primary/25 bg-primary/5 m-4 rounded-2xl">
-                <svg viewBox="0 0 24 24" className="w-14 h-14 text-primary/30" fill="currentColor">
-                  <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
-                </svg>
-                <p className="text-primary/40 text-sm font-medium text-center px-6">
-                  Smiling girl — Why Alignex page image
-                </p>
-              </div>
+              <img
+                src="/assets/ModelWhy.png"
+                alt="Smiling patient with Alignex clear aligners"
+                className="w-full h-full object-contain object-bottom"
+                style={{ filter: 'drop-shadow(0 20px 40px rgba(59,130,196,0.2))' }}
+              />
             </motion.div>
           </div>
         </div>

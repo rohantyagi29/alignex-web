@@ -33,22 +33,6 @@ function SparkleIcon() {
   )
 }
 
-function ImagePlaceholder({ label, className }) {
-  return (
-    <div
-      className={`relative flex flex-col items-center justify-center gap-4 border-2 border-dashed border-primary/30 bg-primary/5 rounded-3xl ${className}`}
-    >
-      <div className="w-20 h-20 rounded-full bg-primary/15 flex items-center justify-center">
-        <svg viewBox="0 0 24 24" className="w-10 h-10 text-primary/50" fill="none" stroke="currentColor" strokeWidth="1.4">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15 L16 10 L5 21" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-      <p className="text-primary/50 text-sm font-medium text-center px-6 leading-snug">{label}</p>
-    </div>
-  )
-}
 
 function HeroSection() {
   return (
@@ -78,14 +62,16 @@ function HeroSection() {
           </div>
         </motion.div>
 
-        {/* Right: image placeholder */}
+        {/* Right: model image */}
         <motion.div variants={fadeRight} initial="hidden" animate="show" className="flex justify-center lg:justify-end">
           <div className="relative">
-            {/* Glow behind the placeholder */}
+            {/* Glow behind the image */}
             <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-90 pointer-events-none" />
-            <ImagePlaceholder
-              label="Girl holding clear aligner — hero image"
-              className="relative w-[340px] h-[500px] md:w-[420px] md:h-[580px]"
+            <img
+              src="/assets/ModelHome.png"
+              alt="Girl holding Alignex clear aligner"
+              className="relative w-[340px] md:w-[420px] object-contain drop-shadow-2xl"
+              style={{ filter: 'drop-shadow(0 30px 60px rgba(59,130,196,0.3))' }}
             />
           </div>
         </motion.div>
