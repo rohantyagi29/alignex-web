@@ -10,6 +10,7 @@ import HowItWorks from './pages/HowItWorks'
 import Education from './pages/Education'
 import FAQs from './pages/FAQs'
 import Contact from './pages/Contact'
+import SubmitCase from './pages/SubmitCase'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -29,6 +30,7 @@ function AnimatedRoutes() {
         <Route path="/education" element={<Education />} />
         <Route path="/faqs" element={<FAQs />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/submit-case" element={<SubmitCase />} />
       </Routes>
     </AnimatePresence>
   )

@@ -56,7 +56,7 @@ function HeroSection() {
             scientifically accurate!
           </p>
           <div className="mt-10">
-            <Link to="/contact" className="btn-white-outline">
+            <Link to="/submit-case" className="btn-white-outline">
               Submit a Case
             </Link>
           </div>
@@ -103,7 +103,7 @@ function PrideSection() {
     <>
       {/* Blue strip CTA */}
       <div className="bg-primary py-6 flex justify-center">
-        <Link to="/contact" className="btn-black">Submit a Case</Link>
+        <Link to="/submit-case" className="btn-black">Submit a Case</Link>
       </div>
 
       <section className="section-pad bg-white">
