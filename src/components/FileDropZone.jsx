@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext,
   DragOverlay,
@@ -132,8 +133,20 @@ function Thumb({ file, progress, style, dragHandleProps, isDragging, isSelected 
 
 function DraggableThumb({ file, progress, isSelected, onTap }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: file.id })
+  const tapStart = useRef(null)
+
   return (
-    <div ref={setNodeRef} onClick={() => onTap?.(file.id)}>
+    <div
+      ref={setNodeRef}
+      className="touch-manipulation"
+      onPointerDown={() => { tapStart.current = Date.now() }}
+      onPointerUp={() => {
+        const dt = tapStart.current !== null ? Date.now() - tapStart.current : Infinity
+        tapStart.current = null
+        // Only treat as tap if the pointer was held less than the drag activation delay (200ms)
+        if (dt < 190 && !isDragging) onTap?.(file.id)
+      }}
+    >
       <Thumb
         file={file}
         progress={progress}
@@ -145,7 +158,7 @@ function DraggableThumb({ file, progress, isSelected, onTap }) {
   )
 }
 
-function CategoryDropZone({ category, files, onRemove, uploadProgress, activeFile, selectedFileId, selectedFile, onAssign }) {
+function CategoryDropZone({ category, files, onRemove, uploadProgress, activeFile, selectedFileId, selectedFile, onAssign, onSelect }) {
   const { setNodeRef, isOver } = useDroppable({ id: category.id })
   const Icon = NO_IMG_ICON[category.id]
 
@@ -221,11 +234,16 @@ function CategoryDropZone({ category, files, onRemove, uploadProgress, activeFil
             <div className="flex flex-wrap gap-1.5 content-start">
               {files.map((f) => (
                 <div key={f.id} className="relative group">
-                  <DraggableThumb file={f} progress={uploadProgress?.[f.id]} />
+                  <DraggableThumb
+                    file={f}
+                    progress={uploadProgress?.[f.id]}
+                    isSelected={selectedFileId === f.id}
+                    onTap={onSelect}
+                  />
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onRemove(f.id) }}
-                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 leading-none"
+                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 leading-none touch-manipulation"
                   >×</button>
                 </div>
               ))}
@@ -291,7 +309,7 @@ function UntaggedPool({ files, onRemove, uploadProgress, selectedFileId, onSelec
   )
 }
 
-function CatGroup({ label, cols, cats, filesByCategory, removeFile, uploadProgress, activeFile, selectedFileId, selectedFile, onAssign }) {
+function CatGroup({ label, cols, cats, filesByCategory, removeFile, uploadProgress, activeFile, selectedFileId, selectedFile, onAssign, onSelect }) {
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">{label}</p>
@@ -307,6 +325,7 @@ function CatGroup({ label, cols, cats, filesByCategory, removeFile, uploadProgre
             selectedFileId={selectedFileId}
             selectedFile={selectedFile}
             onAssign={onAssign}
+            onSelect={onSelect}
           />
         ))}
       </div>
@@ -316,10 +335,10 @@ function CatGroup({ label, cols, cats, filesByCategory, removeFile, uploadProgre
 
 function CategoryPickerSheet({ selectedFile, onAssign, onDismiss }) {
   if (!selectedFile) return null
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/30 z-30 sm:hidden" onClick={onDismiss} />
-      <div className="fixed bottom-0 left-0 right-0 z-40 sm:hidden bg-white rounded-t-3xl shadow-2xl">
+  return createPortal(
+    <div className="sm:hidden">
+      <div className="fixed inset-0 bg-black/30 z-[100]" onClick={onDismiss} />
+      <div className="fixed bottom-0 left-0 right-0 z-[101] bg-white rounded-t-3xl shadow-2xl">
         <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-3" />
         <div className="px-5 pb-2">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Assign to category</p>
@@ -334,8 +353,8 @@ function CategoryPickerSheet({ selectedFile, onAssign, onDismiss }) {
                 key={cat.id}
                 type="button"
                 disabled={!compatible}
-                onClick={() => compatible && onAssign(cat.id)}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-colors ${
+                onPointerUp={() => compatible && onAssign(cat.id)}
+                className={`touch-manipulation w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-colors ${
                   compatible
                     ? 'hover:bg-primary/5 active:bg-primary/10'
                     : 'opacity-35 cursor-not-allowed'
@@ -362,7 +381,8 @@ function CategoryPickerSheet({ selectedFile, onAssign, onDismiss }) {
           })}
         </div>
       </div>
-    </>
+    </div>,
+    document.body
   )
 }
 
@@ -451,7 +471,7 @@ export default function FileDropZone({ value, onChange, uploadProgress }) {
   const selectedFile = value.find((f) => f.id === selectedFileId) || null
 
   const poolProps = { files: poolFiles, onRemove: removeFile, uploadProgress, selectedFileId, onSelect: setSelectedFileId }
-  const catProps  = { filesByCategory, removeFile, uploadProgress, activeFile, selectedFileId, selectedFile, onAssign: assignSelected }
+  const catProps  = { filesByCategory, removeFile, uploadProgress, activeFile, selectedFileId, selectedFile, onAssign: assignSelected, onSelect: setSelectedFileId }
 
   return (
     <div className="space-y-5">
