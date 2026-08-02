@@ -121,7 +121,9 @@ function Thumb({ file, progress, style, dragHandleProps, isDragging, isSelected 
           </svg>
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] px-1 py-0.5 truncate opacity-0 hover:opacity-100 transition-opacity">
+      <div className={`absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] px-1 py-0.5 truncate transition-opacity ${
+        !file.preview || isSelected ? 'opacity-100' : 'opacity-0 hover:opacity-100'
+      }`}>
         {file.name}
       </div>
     </div>
@@ -202,7 +204,7 @@ function CategoryDropZone({ category, files, onRemove, uploadProgress, activeFil
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-gray-800 text-[11px] leading-tight truncate">{category.label}</p>
+            <p className="font-semibold text-gray-800 text-[11px] leading-tight line-clamp-2">{category.label}</p>
             {rejected ? (
               <p className="text-[9px] text-red-500 mt-0.5 font-medium">STL files only</p>
             ) : files.length > 0 ? (
@@ -309,6 +311,58 @@ function CatGroup({ label, cols, cats, filesByCategory, removeFile, uploadProgre
         ))}
       </div>
     </div>
+  )
+}
+
+function CategoryPickerSheet({ selectedFile, onAssign, onDismiss }) {
+  if (!selectedFile) return null
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-30 sm:hidden" onClick={onDismiss} />
+      <div className="fixed bottom-0 left-0 right-0 z-40 sm:hidden bg-white rounded-t-3xl shadow-2xl">
+        <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-3" />
+        <div className="px-5 pb-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Assign to category</p>
+          <p className="font-semibold text-gray-800 text-sm truncate">{selectedFile.name}</p>
+        </div>
+        <div className="px-4 pb-8 space-y-0.5 max-h-[55vh] overflow-y-auto">
+          {CATEGORIES.map((cat) => {
+            const compatible = isFileCompatible(selectedFile, cat)
+            const Icon = NO_IMG_ICON[cat.id]
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                disabled={!compatible}
+                onClick={() => compatible && onAssign(cat.id)}
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-colors ${
+                  compatible
+                    ? 'hover:bg-primary/5 active:bg-primary/10'
+                    : 'opacity-35 cursor-not-allowed'
+                }`}
+              >
+                {cat.img ? (
+                  <img src={cat.img} alt="" className="w-8 h-8 object-contain opacity-50 flex-shrink-0" />
+                ) : Icon ? (
+                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <Icon />
+                  </div>
+                ) : null}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800 text-sm">{cat.label}</p>
+                  {!compatible && <p className="text-[10px] text-gray-400">STL files only</p>}
+                </div>
+                {compatible && (
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 text-primary/40 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -477,7 +531,7 @@ export default function FileDropZone({ value, onChange, uploadProgress }) {
                   <UntaggedPool {...poolProps} />
                 </div>
 
-                <CatGroup label="Photos"   cols="grid-cols-3" cats={PHOTO_CATEGORIES} {...catProps} />
+                <CatGroup label="Photos"   cols="grid-cols-2 sm:grid-cols-3" cats={PHOTO_CATEGORIES} {...catProps} />
                 <CatGroup label="X-rays"   cols="grid-cols-2" cats={XRAY_CATEGORIES}  {...catProps} />
                 <CatGroup label="3D Scans" cols="grid-cols-2" cats={SCAN_CATEGORIES}  {...catProps} />
                 <CatGroup label="Other"    cols="grid-cols-1" cats={OTHER_CATEGORIES} {...catProps} />
@@ -494,6 +548,12 @@ export default function FileDropZone({ value, onChange, uploadProgress }) {
               />
             ) : null}
           </DragOverlay>
+
+          <CategoryPickerSheet
+            selectedFile={selectedFile}
+            onAssign={assignSelected}
+            onDismiss={() => setSelectedFileId(null)}
+          />
         </DndContext>
       )}
     </div>

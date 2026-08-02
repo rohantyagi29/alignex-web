@@ -113,7 +113,7 @@ async function generatePDF({ submissionId, dentist, patient, files, notes, conse
   doc.text(new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }), R, 23, { align: 'right' })
   y = 33
 
-  section('REFERRING DENTIST')
+  section('TREATING DENTIST')
   kv('Name:', `Dr. ${dentist.firstName} ${dentist.lastName}`)
   kv('DCI Registration:', dentist.dciNumber || '—')
   kv('Clinic:', dentist.clinic)
@@ -320,7 +320,7 @@ function MissingRecordsModal({ onBack, onUnderstand }) {
           Back
         </button>
         <button type="button" onClick={onUnderstand}
-          className="flex-1 bg-amber-500 text-white rounded-full py-3 font-semibold text-sm hover:bg-amber-600 transition-colors">
+          className="flex-1 bg-orange-500 text-white rounded-full py-3 font-semibold text-sm hover:bg-orange-600 transition-colors">
           I Understand
         </button>
       </div>
@@ -347,6 +347,9 @@ function MissingScansModal({ onBack, onUnderstand }) {
 
       <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 mb-2 text-sm text-gray-700 leading-relaxed">
         {MISSING_SCANS_TEXT}
+        <p className="mt-3 font-medium text-orange-800">
+          Click "I Understand" if you are going to courier rubber base impressions and aluwax/rubber base bite.
+        </p>
       </div>
       <p className="text-xs text-orange-700 font-medium px-1 mb-6">
         Click <strong>Back</strong> to dismiss and continue uploading the scan files.
@@ -420,17 +423,13 @@ function LiabilityConsentModal({ submitting, onBack, onAgree }) {
 }
 
 // ── OTP overlay ──────────────────────────────────────────────────────────────
-function OtpOverlay({ email, isExisting, formData, files, setUploadProgress, onSuccess, onClose }) {
+function OtpOverlay({ email, formData, files, setUploadProgress, onSuccess, onClose }) {
   const [otp, setOtp] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [phase, setPhase] = useState('verify')
-  const [showPassword, setShowPassword] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(60)
   const inputRefs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()]
 
-  // Countdown timer for resend
   const timerRef = useRef(null)
   if (!timerRef.current) {
     timerRef.current = setInterval(() => setResendCooldown((c) => (c > 0 ? c - 1 : 0)), 1000)
@@ -470,18 +469,14 @@ function OtpOverlay({ email, isExisting, formData, files, setUploadProgress, onS
   }
 
   const submit = async () => {
-    if (otp.length < 6)    { setError('Please enter the full 6-digit code.'); return }
-    if (!password)         { setError(isExisting ? 'Please enter your password.' : 'Please create a password.'); return }
-    if (!isExisting && password.length < 8)          { setError('Password must be at least 8 characters.'); return }
-    if (!isExisting && password !== confirmPassword)  { setError('Passwords do not match.'); return }
+    if (otp.length < 6) { setError('Please enter the full 6-digit code.'); return }
     setError('')
 
     try {
-      setPhase('verify')
       const verifyRes = await fetch(`${API}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, password }),
+        body: JSON.stringify({ email, otp }),
       })
       const verifyData = await verifyRes.json()
       if (!verifyRes.ok) throw new Error(verifyData.error || 'Verification failed')
@@ -580,7 +575,7 @@ function OtpOverlay({ email, isExisting, formData, files, setUploadProgress, onS
         </p>
       </div>
 
-      <div className="flex gap-1.5 sm:gap-2 justify-center mb-5 sm:mb-6" onPaste={handlePaste}>
+      <div className="flex gap-1.5 sm:gap-2 justify-center mb-6 sm:mb-8" onPaste={handlePaste}>
         {Array.from({ length: 6 }).map((_, i) => (
           <input
             key={i}
@@ -595,52 +590,6 @@ function OtpOverlay({ email, isExisting, formData, files, setUploadProgress, onS
             className="w-10 h-11 sm:w-11 sm:h-12 text-center text-lg sm:text-xl font-bold border-2 rounded-xl outline-none transition-all duration-150 focus:border-primary focus:ring-2 focus:ring-primary/30 border-gray-200 disabled:opacity-50"
           />
         ))}
-      </div>
-
-      <div className="space-y-3 mb-4 sm:mb-6">
-        <Label required>{isExisting ? 'Your Alignex password' : 'Create a password'}</Label>
-        {isExisting
-          ? <p className="text-xs text-gray-400 -mt-1">Welcome back! Enter your existing password to continue.</p>
-          : <p className="text-xs text-gray-400 -mt-1">For your Alignex account — at least 8 characters</p>
-        }
-        <div className="relative">
-          <input
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={isExisting ? 'Your password' : 'Password'}
-            disabled={isLoading}
-            autoComplete={isExisting ? 'current-password' : 'new-password'}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary pr-10 disabled:opacity-50"
-          />
-          <button type="button" onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-            {showPassword
-              ? <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-              : <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            }
-          </button>
-        </div>
-        {!isExisting && (
-          <div>
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm password"
-              disabled={isLoading}
-              autoComplete="new-password"
-              className={`w-full border rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-50 transition-colors ${
-                confirmPassword && password !== confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-200'
-              }`}
-            />
-            {confirmPassword && (
-              <p className={`text-xs mt-1 ${password === confirmPassword ? 'text-green-600' : 'text-red-500'}`}>
-                {password === confirmPassword ? '✓ Passwords match' : 'Passwords do not match'}
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
       {error && (
@@ -740,7 +689,6 @@ export default function SubmitCase() {
   const [uploadProgress, setUploadProgress] = useState({})
   const [submitting, setSubmitting]         = useState(false)
   const [showOtp, setShowOtp]               = useState(false)
-  const [isExisting, setIsExisting]         = useState(false)
   const [submissionId, setSubmissionId]     = useState(null)
 
   // Consent / prompt state
@@ -844,8 +792,6 @@ export default function SubmitCase() {
         body: JSON.stringify({ email: dentist.email }),
       })
       if (!res.ok) throw new Error('Failed to send verification code')
-      const data = await res.json()
-      setIsExisting(data.isExisting || false)
       setShowOtp(true)
     } catch (err) {
       setErrors({ submit: err.message })
@@ -887,7 +833,7 @@ export default function SubmitCase() {
         {/* Section 1 — Dentist */}
         <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
           className="bg-white rounded-3xl p-8 md:p-10 shadow-sm mb-8">
-          <SectionHeading number="1">Referring Dentist Details</SectionHeading>
+          <SectionHeading number="1">Treating Dentist Details</SectionHeading>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div id="dentist.firstName">
               <Label required>First Name</Label>
@@ -1048,7 +994,6 @@ export default function SubmitCase() {
           <OtpOverlay
             key="otp"
             email={dentist.email}
-            isExisting={isExisting}
             formData={{ dentist, patient, notes, consentLog }}
             files={files}
             setUploadProgress={setUploadProgress}
