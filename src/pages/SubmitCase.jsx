@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { jsPDF } from 'jspdf'
 import FileDropZone from '../components/FileDropZone'
+import { setToken } from '../lib/auth'
 
 const API = import.meta.env.VITE_API_BASE || ''
 
@@ -156,6 +157,70 @@ async function generatePDF({ submissionId, dentist, patient, files, notes, conse
   }
 
   doc.save(`alignex-${submissionId}.pdf`)
+}
+
+// ── Upload + submit helper ───────────────────────────────────────────────────
+async function doUploadAndSubmit({ idToken, formData, files, setUploadProgress, setPhase }) {
+  const authHeader = { Authorization: `Bearer ${idToken}` }
+  let submissionId = crypto.randomUUID()
+  let fileKeys = []
+
+  if (files.length > 0) {
+    setPhase('uploading')
+    const urlRes = await fetch(`${API}/get-upload-urls`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader },
+      body: JSON.stringify({ files: files.map((f) => ({ name: f.name, type: f.type })) }),
+    })
+    if (!urlRes.ok) throw new Error('Failed to get upload URLs')
+    const { submissionId: sid, urls } = await urlRes.json()
+    submissionId = sid
+
+    await Promise.all(
+      urls.map(({ uploadUrl, key, name }, idx) => {
+        const fileObj = files.find((f) => f.name === name) || files[idx]
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('PUT', uploadUrl)
+          xhr.setRequestHeader('Content-Type', fileObj.type || 'application/octet-stream')
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              setUploadProgress((prev) => ({
+                ...prev,
+                [fileObj.id]: Math.round((e.loaded / e.total) * 100),
+              }))
+            }
+          }
+          xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error('Upload failed')))
+          xhr.onerror = () => reject(new Error('Upload failed'))
+          xhr.send(fileObj.file)
+        })
+      })
+    )
+
+    fileKeys = urls.map(({ key, name }, idx) => ({
+      key,
+      name,
+      category: files.find((f) => f.name === name)?.category || files[idx]?.category || null,
+    }))
+  }
+
+  setPhase('submitting')
+  const submitRes = await fetch(`${API}/submit-case`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader },
+    body: JSON.stringify({
+      submissionId,
+      dentist: formData.dentist,
+      patient: formData.patient,
+      notes: formData.notes,
+      fileKeys,
+      consentLog: formData.consentLog,
+    }),
+  })
+  const submitData = await submitRes.json()
+  if (!submitRes.ok) throw new Error(submitData.error || 'Submission failed')
+  return submitData.submissionId
 }
 
 // ── Shared UI primitives ─────────────────────────────────────────────────────
@@ -320,7 +385,7 @@ function MissingRecordsModal({ onBack, onUnderstand }) {
           Back
         </button>
         <button type="button" onClick={onUnderstand}
-          className="flex-1 bg-orange-500 text-white rounded-full py-3 font-semibold text-sm hover:bg-orange-600 transition-colors">
+          className="flex-1 border-2 border-gray-200 text-gray-700 rounded-full py-3 font-semibold text-sm hover:border-gray-300 transition-colors">
           I Understand
         </button>
       </div>
@@ -361,7 +426,7 @@ function MissingScansModal({ onBack, onUnderstand }) {
           Back
         </button>
         <button type="button" onClick={onUnderstand}
-          className="flex-1 bg-orange-500 text-white rounded-full py-3 font-semibold text-sm hover:bg-orange-600 transition-colors">
+          className="flex-1 border-2 border-gray-200 text-gray-700 rounded-full py-3 font-semibold text-sm hover:border-gray-300 transition-colors">
           I Understand
         </button>
       </div>
@@ -406,33 +471,68 @@ function LiabilityConsentModal({ submitting, onBack, onAgree }) {
           Back
         </button>
         <button type="button" onClick={() => checked && onAgree()} disabled={!checked || submitting}
-          className="flex-1 bg-primary text-white rounded-full py-3 font-semibold text-sm hover:bg-primary-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-          {submitting ? (
-            <span className="flex items-center justify-center gap-2">
-              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
-                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-              </svg>
-              Sending code…
-            </span>
-          ) : 'Confirm & Submit'}
+          className="flex-1 border-2 border-gray-200 text-gray-700 rounded-full py-3 font-semibold text-sm hover:border-gray-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+Confirm & Submit
         </button>
       </div>
     </ModalOverlay>
   )
 }
 
-// ── OTP overlay ──────────────────────────────────────────────────────────────
-function OtpOverlay({ email, formData, files, setUploadProgress, onSuccess, onClose }) {
+// ── Inline email verification ─────────────────────────────────────────────────
+function InlineOtpVerify({ email, onVerified }) {
+  const [phase, setPhase] = useState('idle') // idle | sending | sent | verifying | verified
   const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
-  const [phase, setPhase] = useState('verify')
-  const [resendCooldown, setResendCooldown] = useState(60)
-  const inputRefs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()]
+  const [cooldown, setCooldown] = useState(0)
+  const inputRefs = useRef([])
+  const cooldownRef = useRef(null)
+  const prevEmail = useRef(email)
 
-  const timerRef = useRef(null)
-  if (!timerRef.current) {
-    timerRef.current = setInterval(() => setResendCooldown((c) => (c > 0 ? c - 1 : 0)), 1000)
+  useEffect(() => {
+    return () => clearInterval(cooldownRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (email !== prevEmail.current) {
+      prevEmail.current = email
+      setPhase('idle')
+      setOtp('')
+      setError('')
+      clearInterval(cooldownRef.current)
+      setCooldown(0)
+    }
+  }, [email])
+
+  const startCooldown = () => {
+    setCooldown(60)
+    clearInterval(cooldownRef.current)
+    cooldownRef.current = setInterval(() => {
+      setCooldown((c) => {
+        if (c <= 1) { clearInterval(cooldownRef.current); return 0 }
+        return c - 1
+      })
+    }, 1000)
+  }
+
+  const sendCode = async () => {
+    setPhase('sending')
+    setError('')
+    try {
+      const res = await fetch(`${API}/request-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      if (!res.ok) throw new Error('Failed to send code')
+      setPhase('sent')
+      setOtp('')
+      startCooldown()
+      setTimeout(() => inputRefs.current[0]?.focus(), 80)
+    } catch {
+      setPhase('idle')
+      setError('Failed to send code. Check the email and try again.')
+    }
   }
 
   const handleDigit = (i, val) => {
@@ -440,185 +540,118 @@ function OtpOverlay({ email, formData, files, setUploadProgress, onSuccess, onCl
     digits[i] = val.slice(-1)
     const next = digits.join('')
     setOtp(next)
-    if (val && i < 5) inputRefs[i + 1].current?.focus()
+    if (val && i < 5) inputRefs.current[i + 1]?.focus()
   }
 
   const handleKeyDown = (i, e) => {
-    if (e.key === 'Backspace' && !otp[i] && i > 0) inputRefs[i - 1].current?.focus()
+    if (e.key === 'Backspace' && !otp[i] && i > 0) inputRefs.current[i - 1]?.focus()
   }
 
   const handlePaste = (e) => {
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
     setOtp(pasted)
-    inputRefs[Math.min(pasted.length, 5)].current?.focus()
+    inputRefs.current[Math.min(pasted.length, 5)]?.focus()
   }
 
-  const resend = async () => {
-    if (resendCooldown > 0) return
-    try {
-      await fetch(`${API}/request-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      setResendCooldown(60)
-      setError('')
-    } catch {
-      setError('Failed to resend. Try again.')
-    }
-  }
-
-  const submit = async () => {
-    if (otp.length < 6) { setError('Please enter the full 6-digit code.'); return }
+  const verify = async () => {
+    if (otp.length < 6) { setError('Enter the full 6-digit code.'); return }
+    setPhase('verifying')
     setError('')
-
     try {
-      const verifyRes = await fetch(`${API}/verify-otp`, {
+      const res = await fetch(`${API}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp }),
       })
-      const verifyData = await verifyRes.json()
-      if (!verifyRes.ok) throw new Error(verifyData.error || 'Verification failed')
-      const { idToken } = verifyData
-      const authHeader = { Authorization: `Bearer ${idToken}` }
-
-      setPhase('uploading')
-      let submissionId = crypto.randomUUID()
-      let fileKeys = []
-
-      if (files.length > 0) {
-        const urlRes = await fetch(`${API}/get-upload-urls`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader },
-          body: JSON.stringify({ files: files.map((f) => ({ name: f.name, type: f.type })) }),
-        })
-        if (!urlRes.ok) throw new Error('Failed to get upload URLs')
-        const { submissionId: sid, urls } = await urlRes.json()
-        submissionId = sid
-
-        await Promise.all(
-          urls.map(({ uploadUrl, key, name }, idx) => {
-            const fileObj = files.find((f) => f.name === name) || files[idx]
-            return new Promise((resolve, reject) => {
-              const xhr = new XMLHttpRequest()
-              xhr.open('PUT', uploadUrl)
-              xhr.setRequestHeader('Content-Type', fileObj.type)
-              xhr.upload.onprogress = (e) => {
-                if (e.lengthComputable) {
-                  setUploadProgress((prev) => ({
-                    ...prev,
-                    [fileObj.id]: Math.round((e.loaded / e.total) * 100),
-                  }))
-                }
-              }
-              xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error('Upload failed')))
-              xhr.onerror = () => reject(new Error('Upload failed'))
-              xhr.send(fileObj.file)
-            })
-          })
-        )
-
-        fileKeys = urls.map(({ key, name }, idx) => ({
-          key,
-          name,
-          category: files.find((f) => f.name === name)?.category || files[idx]?.category || null,
-        }))
-      }
-
-      setPhase('submitting')
-      const submitRes = await fetch(`${API}/submit-case`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({
-          submissionId,
-          dentist: formData.dentist,
-          patient: formData.patient,
-          notes: formData.notes,
-          fileKeys,
-          consentLog: formData.consentLog,
-        }),
-      })
-      const submitData = await submitRes.json()
-      if (!submitRes.ok) throw new Error(submitData.error || 'Submission failed')
-
-      clearInterval(timerRef.current)
-      onSuccess(submitData.submissionId)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Invalid code')
+      clearInterval(cooldownRef.current)
+      setPhase('verified')
+      onVerified(data.idToken)
     } catch (e) {
+      setPhase('sent')
       setError(e.message)
-      setPhase('verify')
     }
   }
 
-  const isLoading    = phase !== 'verify'
-  const loadingLabel = phase === 'uploading'
-    ? `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}…`
-    : 'Submitting case…'
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+  if (phase === 'verified') {
+    return (
+      <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 mt-2">
+        <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polyline points="20 6 9 17 4 12" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Email verified
+      </div>
+    )
+  }
+
+  if (!isValidEmail) return null
 
   return (
-    <ModalOverlay maxW="max-w-md">
-      {!isLoading && (
-        <button onClick={onClose} className="absolute top-5 right-5 text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
-      )}
-
-      <div className="text-center mb-5 sm:mb-8">
-        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3 sm:mb-4">
-          <svg viewBox="0 0 24 24" className="w-7 h-7 text-primary" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-            <polyline points="22,6 12,13 2,6" />
-          </svg>
-        </div>
-        <h3 className="font-display font-bold text-gray-900 text-2xl">Verify your email</h3>
-        <p className="text-gray-500 text-sm mt-2">
-          We sent a 6-digit code to<br />
-          <span className="font-semibold text-gray-800">{email}</span>
-        </p>
-      </div>
-
-      <div className="flex gap-1.5 sm:gap-2 justify-center mb-6 sm:mb-8" onPaste={handlePaste}>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <input
-            key={i}
-            ref={inputRefs[i]}
-            type="text"
-            inputMode="numeric"
-            maxLength={1}
-            value={otp[i] || ''}
-            onChange={(e) => handleDigit(i, e.target.value)}
-            onKeyDown={(e) => handleKeyDown(i, e)}
-            disabled={isLoading}
-            className="w-10 h-11 sm:w-11 sm:h-12 text-center text-lg sm:text-xl font-bold border-2 rounded-xl outline-none transition-all duration-150 focus:border-primary focus:ring-2 focus:ring-primary/30 border-gray-200 disabled:opacity-50"
-          />
-        ))}
-      </div>
-
-      {error && (
-        <p className="text-red-500 text-sm text-center mb-4 bg-red-50 rounded-xl py-2 px-4">{error}</p>
-      )}
-
-      <button type="button" onClick={submit} disabled={isLoading}
-        className="w-full bg-primary text-white rounded-full py-4 font-semibold text-sm tracking-widest uppercase hover:bg-primary-dark transition-colors duration-200 disabled:opacity-60">
-        {isLoading ? (
-          <span className="flex items-center justify-center gap-3">
-            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+    <div className="mt-2">
+      {(phase === 'idle' || phase === 'sending') && (
+        <button
+          type="button"
+          onClick={sendCode}
+          disabled={phase === 'sending'}
+          className="flex items-center gap-2 text-sm font-medium text-primary border border-primary/30 rounded-xl px-4 py-2 hover:bg-primary/5 transition-colors disabled:opacity-50"
+        >
+          {phase === 'sending' && (
+            <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
               <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
-            {loadingLabel}
-          </span>
-        ) : 'Verify & Submit Case'}
-      </button>
+          )}
+          {phase === 'sending' ? 'Sending…' : 'Send Verification Code'}
+        </button>
+      )}
 
-      <div className="text-center mt-5">
-        {resendCooldown > 0
-          ? <p className="text-gray-400 text-sm">Resend code in {resendCooldown}s</p>
-          : <button type="button" onClick={resend} disabled={isLoading}
-              className="text-primary text-sm font-medium hover:underline disabled:opacity-40">
-              Resend code
+      {(phase === 'sent' || phase === 'verifying') && (
+        <div className="space-y-2.5">
+          <div className="flex gap-1.5" onPaste={handlePaste}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <input
+                key={i}
+                ref={(el) => { inputRefs.current[i] = el }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                value={otp[i] || ''}
+                onChange={(e) => handleDigit(i, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(i, e)}
+                disabled={phase === 'verifying'}
+                className="w-9 h-10 text-center text-base font-bold border-2 rounded-xl outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/30 border-gray-200 disabled:opacity-50"
+              />
+            ))}
+          </div>
+          {error && <p className="text-red-500 text-xs">{error}</p>}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={verify}
+              disabled={phase === 'verifying' || otp.length < 6}
+              className="flex items-center gap-2 text-sm font-semibold text-white bg-primary rounded-xl px-4 py-2 hover:bg-primary-dark transition-colors disabled:opacity-40"
+            >
+              {phase === 'verifying' && (
+                <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              )}
+              {phase === 'verifying' ? 'Verifying…' : 'Verify Email'}
             </button>
-        }
-      </div>
-    </ModalOverlay>
+            {cooldown > 0
+              ? <span className="text-gray-400 text-xs">Resend in {cooldown}s</span>
+              : <button type="button" onClick={sendCode} className="text-primary text-xs font-medium hover:underline">Resend</button>
+            }
+          </div>
+        </div>
+      )}
+
+      {error && phase === 'idle' && <p className="text-red-500 text-xs mt-1">{error}</p>}
+    </div>
   )
 }
 
@@ -688,7 +721,8 @@ export default function SubmitCase() {
   const [errors, setErrors]                 = useState({})
   const [uploadProgress, setUploadProgress] = useState({})
   const [submitting, setSubmitting]         = useState(false)
-  const [showOtp, setShowOtp]               = useState(false)
+  const [submittingPhase, setSubmittingPhase] = useState('idle') // idle | uploading | submitting
+  const [idToken, setIdToken]               = useState(null)
   const [submissionId, setSubmissionId]     = useState(null)
 
   // Consent / prompt state
@@ -758,6 +792,11 @@ export default function SubmitCase() {
       document.getElementById(Object.keys(errs)[0])?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
+    if (!idToken) {
+      setErrors({ submit: 'Please verify your email address before submitting.' })
+      document.getElementById('dentist.email')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
     setErrors({})
 
     const emptyPhotoXray = PHOTO_XRAY_IDS.some((id) => !files.some((f) => f.category === id))
@@ -782,21 +821,24 @@ export default function SubmitCase() {
 
   const handleLiabilityAgree = async () => {
     const liabilityTs = Date.now()
-    setConsentLog((prev) => ({ ...prev, liability: liabilityTs }))
+    const newConsentLog = { ...consentLog, liability: liabilityTs }
+    setConsentLog(newConsentLog)
     setSubmitStep(null)
     setSubmitting(true)
     try {
-      const res = await fetch(`${API}/request-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: dentist.email }),
+      const sid = await doUploadAndSubmit({
+        idToken,
+        formData: { dentist, patient, notes, consentLog: newConsentLog },
+        files,
+        setUploadProgress,
+        setPhase: setSubmittingPhase,
       })
-      if (!res.ok) throw new Error('Failed to send verification code')
-      setShowOtp(true)
+      setSubmissionId(sid)
     } catch (err) {
       setErrors({ submit: err.message })
     } finally {
       setSubmitting(false)
+      setSubmittingPhase('idle')
     }
   }
 
@@ -824,7 +866,7 @@ export default function SubmitCase() {
           </motion.h1>
           <motion.p variants={fadeUp} custom={1} initial="hidden" animate="show"
             className="mt-4 text-white/70 text-lg max-w-lg">
-            Fill in the details below. You'll verify your email before we receive your case.
+            Fill in the details below and verify your email to submit.
           </motion.p>
         </div>
       </div>
@@ -858,6 +900,12 @@ export default function SubmitCase() {
             <div id="dentist.email">
               <Label required>Email Address</Label>
               <Input type="email" placeholder="doctor@clinic.com" value={dentist.email} onChange={set(setDentist)('email')} error={errors['dentist.email']} />
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-xs text-gray-400 mb-1">
+                Use the email where you want to receive all case updates and future correspondence.
+              </p>
+              <InlineOtpVerify email={dentist.email} onVerified={(token) => { setIdToken(token); setToken(token) }} />
             </div>
             <div className="sm:col-span-2" id="dentist.address1">
               <Label required>Address Line 1</Label>
@@ -953,7 +1001,7 @@ export default function SubmitCase() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !isFormValid}
+            disabled={submitting || !isFormValid || !idToken}
             className="btn-black px-14 py-5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {submitting ? (
@@ -962,11 +1010,17 @@ export default function SubmitCase() {
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
                   <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                 </svg>
-                Sending code…
+                {submittingPhase === 'uploading'
+                  ? `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}…`
+                  : submittingPhase === 'submitting'
+                  ? 'Submitting…'
+                  : 'Working…'}
               </span>
             ) : 'Submit Case'}
           </button>
-          <p className="text-gray-400 text-xs mt-4">You'll verify your email in the next step</p>
+          {isFormValid && !idToken && (
+            <p className="text-amber-600 text-xs mt-3">Verify your email above before submitting</p>
+          )}
         </motion.div>
       </div>
 
@@ -989,17 +1043,6 @@ export default function SubmitCase() {
         )}
         {submitStep === 'liability' && (
           <LiabilityConsentModal key="liability" submitting={submitting} onBack={handleBack} onAgree={handleLiabilityAgree} />
-        )}
-        {showOtp && (
-          <OtpOverlay
-            key="otp"
-            email={dentist.email}
-            formData={{ dentist, patient, notes, consentLog }}
-            files={files}
-            setUploadProgress={setUploadProgress}
-            onSuccess={(sid) => { setShowOtp(false); setSubmissionId(sid) }}
-            onClose={() => setShowOtp(false)}
-          />
         )}
       </AnimatePresence>
     </motion.div>

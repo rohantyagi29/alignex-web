@@ -11,6 +11,9 @@ import Education from './pages/Education'
 import FAQs from './pages/FAQs'
 import Contact from './pages/Contact'
 import SubmitCase from './pages/SubmitCase'
+import Login from './pages/Login'
+import MyCases from './pages/MyCases'
+import Admin from './pages/Admin'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -31,8 +34,23 @@ function AnimatedRoutes() {
         <Route path="/faqs" element={<FAQs />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/submit-case" element={<SubmitCase />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/my-cases" element={<MyCases />} />
+        <Route path="/admin" element={<Admin />} />
       </Routes>
     </AnimatePresence>
+  )
+}
+
+function AppShell() {
+  const { pathname } = useLocation()
+  const isLogin = pathname === '/login'
+  return (
+    <>
+      {!isLogin && <Navbar />}
+      <AnimatedRoutes />
+      {!isLogin && <Footer />}
+    </>
   )
 }
 
@@ -40,9 +58,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Navbar />
-      <AnimatedRoutes />
-      <Footer />
+      <AppShell />
     </BrowserRouter>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { isTokenValid, clearToken } from '../lib/auth'
 
 const navLinks = [
   { label: 'Home', to: '/' },
@@ -26,7 +27,9 @@ function AlignexLogo() {
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [loggedIn, setLoggedIn] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10)
@@ -34,7 +37,16 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  useEffect(() => { setMenuOpen(false) }, [location.pathname])
+  useEffect(() => {
+    setMenuOpen(false)
+    setLoggedIn(isTokenValid())
+  }, [location.pathname])
+
+  const handleLogout = () => {
+    clearToken()
+    setLoggedIn(false)
+    navigate('/')
+  }
 
   return (
     <header
@@ -70,6 +82,35 @@ export default function Navbar() {
                 </Link>
               )
             })}
+            {loggedIn ? (
+              <>
+                <Link
+                  to="/my-cases"
+                  className={`relative text-sm text-white transition-opacity duration-200 hover:opacity-80 ${
+                    location.pathname === '/my-cases' ? 'font-bold' : 'font-normal'
+                  }`}
+                >
+                  My Cases
+                  {location.pathname === '/my-cases' && (
+                    <motion.span layoutId="nav-underline" className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white rounded-full" />
+                  )}
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-sm text-white/70 hover:text-white transition-colors"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="text-sm font-semibold text-primary bg-white rounded-full px-4 py-1.5 hover:bg-white/90 transition-colors"
+              >
+                Log in
+              </Link>
+            )}
           </nav>
 
           {/* Mobile hamburger */}
@@ -106,6 +147,32 @@ export default function Navbar() {
                 {label}
               </Link>
             ))}
+            {loggedIn ? (
+              <>
+                <Link
+                  to="/my-cases"
+                  className={`block px-6 py-3.5 text-sm text-white border-b border-white/5 transition-colors hover:bg-white/10 ${
+                    location.pathname === '/my-cases' ? 'font-bold bg-white/10' : ''
+                  }`}
+                >
+                  My Cases
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="block w-full text-left px-6 py-3.5 text-sm text-white/70 hover:bg-white/10 transition-colors"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="block px-6 py-3.5 text-sm font-semibold text-white border-b border-white/5 hover:bg-white/10 transition-colors"
+              >
+                Log in
+              </Link>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

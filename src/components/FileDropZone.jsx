@@ -90,9 +90,10 @@ const NO_IMG_ICON = {
   other: OtherIcon,
 }
 
-function Thumb({ file, progress, style, dragHandleProps, isDragging, isSelected }) {
+function Thumb({ file, progress, style, dragHandleProps, isDragging, isSelected, nodeRef }) {
   return (
     <div
+      ref={nodeRef}
       {...dragHandleProps}
       className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 cursor-grab active:cursor-grabbing select-none flex-shrink-0 transition-all ${
         isDragging
@@ -137,13 +138,11 @@ function DraggableThumb({ file, progress, isSelected, onTap }) {
 
   return (
     <div
-      ref={setNodeRef}
       className="touch-manipulation"
       onPointerDown={() => { tapStart.current = Date.now() }}
       onPointerUp={() => {
         const dt = tapStart.current !== null ? Date.now() - tapStart.current : Infinity
         tapStart.current = null
-        // Only treat as tap if the pointer was held less than the drag activation delay (200ms)
         if (dt < 190 && !isDragging) onTap?.(file.id)
       }}
     >
@@ -152,6 +151,7 @@ function DraggableThumb({ file, progress, isSelected, onTap }) {
         progress={progress}
         isDragging={isDragging}
         isSelected={isSelected}
+        nodeRef={setNodeRef}
         dragHandleProps={{ ...attributes, ...listeners }}
       />
     </div>
